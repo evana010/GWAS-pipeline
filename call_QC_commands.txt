@@ -1,0 +1,18 @@
+####################################### Quality Control for All Batches ########################################
+
+#################### Cases ###########################
+bash GWAS_QC_cases.sh Batch0.5/ GSA2016_250_025 Batch0.5/GSA2016_250_025 /slade/home/sd718/required_files/STRAND_info/version_2/GSAMD-24v2-0_20024620_A1-b37.Source.strand
+bash GWAS_QC_cases.sh Batch1/ GC-KM-10290-All-Sample-ST Batch1/GC-KM-10290-All-Sample-ST /slade/home/sd718/required_files/STRAND_info/version_3/GSAMD-24v3-0-EA_20034606_A1-b37.strand
+bash GWAS_QC_cases.sh Batch2/ PLINK_060525_merged Batch2/merge/PLINK_060525_merged_coloradorem /slade/home/sd718/required_files/STRAND_info/version_3/GSAMD-24v3-0-EA_20034606_A1-b37.strand
+bash GWAS_QC_cases.sh Batch3/ BATCH3_GS Batch3/BATCH3_GS /slade/home/sd718/required_files/STRAND_info/version_3/GSAMD-24v3-0-EA_20034606_A1-b37.strand
+
+#################### Controls ########################
+bash GWAS_QC_controls.sh Controls/GSA2018_283_025/ GSA2018_283_025 /slade/projects/EXTEND/genotype_data/GSA2018_283_025/Plink_analysis/GSA2018_283_025_EXTEND_r1 /slade/home/sd718/Source_strand_position_files_wryner/GSAMD_24v1_0_20011747_A1/hg37/GSAMD-24v1-0_20011747_A1-b37.Source.strand
+bash GWAS_QC_controls.sh Controls/GSA2018-377-025/ GSA2018-377-025 /slade/projects/EXTEND/genotype_data/GSA2018-377-025/Plink_analysis/GSA2018_377_EXTEND_r1 /slade/home/sd718/Source_strand_position_files_wryner/GSAMD_24v1_0_20011747_A1/hg37/GSAMD-24v1-0_20011747_A1-b37.Source.strand
+bash GWAS_QC_controls.sh Controls/GSA2016_16_025/ GSA2016_16_025 /slade/projects/EXTEND/genotype_data/GSA2016_16_025/Plink_analysis/GSA2016-16-025_EXTEND_r1 /slade/home/sd718/Source_strand_position_files_wryner/GSAMD_24v1_0_20011747_A1/hg37/GSAMD-24v1-0_20011747_A1-b37.Source.strand
+
+# RUN GENOTYPE HARMONISER
+# MERGE
+
+#################### Cases + Controls Merged ##########################
+bash GWAS_QC_merged.sh Cases_controls_merged/ CASES_and_CONTROLS_merged /slade/projects/EXTEND/pituitary/analysis/Merge/CASES_and_CONTROLS_merged

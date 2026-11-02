@@ -1,0 +1,47 @@
+#THIS SCRIPT EXECUTES AN ANALYSIS OF EIGHT STUDIES
+#THE RESULTS FOR EACH STUDY ARE STORED IN FILES Inputfile1.txt THROUGH Inputfile8.txt
+
+#LOAD THE FIRST EIGHT INPUT FILES
+
+# UNCOMMENT THE NEXT LINE TO ENABLE GenomicControl CORRECTION
+# GENOMICCONTROL ON
+
+SCHEME STDERR
+
+MARKER ID
+ALLELE ALLELE0 ALLELE1
+EFFECT BETA
+PVALUE PVALUE 
+WEIGHT N
+STDERR SE
+PROCESS /slade/projects/EXTEND/pituitary/analysis/Association_testing/GWAS_step2_output_allinc_EURONLY_Pheno_pvalue_updatedID.regenie
+
+MARKER ID
+ALLELE ALLELE0 ALLELE1
+EFFECT BETA
+PVALUE PVALUE 
+WEIGHT N
+STDERR SE
+PROCESS /slade/projects/EXTEND/pituitary/analysis/Association_testing/UKBB_pit_adenoma_gwas_pvalue_updatedID.regenie
+
+MARKER ID
+ALLELE ALLELE0 ALLELE1
+EFFECT BETA
+PVALUE PVALUE 
+WEIGHT N
+STDERR SE
+PROCESS /slade/projects/EXTEND/pituitary/analysis/Association_testing/AOU_pit_adenoma_eur_pvalue.regenie
+
+MARKER id
+ALLELE ref alt
+EFFECT beta
+PVALUE pval
+WEIGHT N
+STDERR sebeta
+PROCESS /slade/projects/EXTEND/pituitary/analysis/Association_testing/finngen_R13_GWAS_updated_MAF_0.01
+
+# minimum number of people with a variant to be included
+MINWEIGHT 10000
+ANALYZE 
+
+QUIT

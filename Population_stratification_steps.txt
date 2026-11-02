@@ -1,0 +1,203 @@
+################################## Population Stratification ####################################
+# load modules
+module load PLINK/1.9b7.2-x86_64
+module load R/4.1.2-foss-2021b R-bundle-Packages/4.1.2-20220117-foss-2021b
+module load R
+
+module load Anaconda3
+conda activate myenv
+
+
+####################################### Estimate Ancestry for Cases ###################################################
+
+# download 1000 genomes data phase 3
+/slade/projects/Public_Ref_Datasets/1000_genomes/1kg_all
+wget ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/integrated_call_samples_v3.20130502.ALL.panel
+
+
+####################### Step 1. QC 1000 Genomes Data ###########################
+
+## QC on 1000 Genomes data.
+plink --bfile 1kg_ref/1kg_all --geno 0.02 --mind 0.02 --maf 0.05 --hwe 1.0e-03 --allow-no-sex --make-bed --out 1kg_ref/1kg_all_QC1
+
+plink --bfile 1kg_ref/1kg_all_QC1 --exclude /slade/local/pituitary/analysis/QC/inversion_hg37.txt --range --indep-pairwise 1500 150 0.2 --make-bed --out 1kg_ref/1kg_all_pruned
+
+
+############################# Step 2. Extract SNPs #############################
+
+# Extract the variants present in our data dataset from the 1000 genomes dataset.
+awk '{print$2}' CASES_and_CONTROLS_merged_pruned.bim > CASES_and_CONTROLS_merged_snps.txt
+plink --bfile 1kg_ref/1kg_all_pruned --extract CASES_and_CONTROLS_merged_snps.txt --make-bed --out 1kg_ref/1kg_phase1_extracted
+
+# Extract the variants present in 1000 Genomes dataset from the our dataset.
+awk '{print$2}' 1kg_ref/1kg_all_pruned.bim > 1kg_ref/1kg_snps.txt
+plink --bfile CASES_and_CONTROLS_merged_pruned --extract 1kg_ref/1kg_snps.txt --recode --make-bed --out CASES_and_CONTROLS_merged_extracted
+
+###################### Step 4. Merge with 1000 Genomes ##########################
+
+# get 1kg population information
+grep -f <(awk '{print $2}' 1kg_ref/1kg_all.fam) <(awk 'NR > 1 {print $1, $1, $3}' 1kg_ref/1k.ped) > 1kg_ref/1KG_Phenos.txt
+sed -i -e 's/EUR/3/g' -e 's/EAS/4/g' -e 's/AMR/5/g' -e 's/AFR/6/g' -e 's/SAS/7/g' 1kg_ref/1KG_Phenos.txt
+awk '{print $3}' 1kg_ref/1KG_Phenos.txt | sort | uniq > 1kg_ref/1KG_poplist.txt
+
+# add phenotype to plink file 
+plink --bfile 1kg_ref/1kg_phase1_extracted --pheno 1kg_ref/1KG_Phenos.txt --make-bed --out 1kg_ref/1kg_all_pheno
+
+# remove missnp
+plink --bfile CASES_and_CONTROLS_merged_extracted --bmerge 1kg_ref/1kg_all_pheno.bed 1kg_ref/1kg_all_pheno.bim 1kg_ref/1kg_all_pheno.fam --allow-no-sex --make-bed --out CASES_and_CONTROLS_1kg_fail
+plink --bfile CASES_and_CONTROLS_merged_extracted --exclude CASES_and_CONTROLS_1kg_fail-merge.missnp --make-bed --out CASES_and_CONTROLS_merged_snpsrem
+plink --bfile 1kg_ref/1kg_all_pheno --exclude CASES_and_CONTROLS_1kg_fail-merge.missnp --make-bed --out 1kg_ref/1kg_snpsrem
+
+# merge 
+plink --bfile CASES_and_CONTROLS_merged_snpsrem --bmerge 1kg_ref/1kg_snpsrem.bed 1kg_ref/1kg_snpsrem.bim 1kg_ref/1kg_snpsrem.fam --allow-no-sex --make-bed --out CASES_and_CONTROLS_1kg_merge
+
+####################### Step 5. PCA for cases + 1000G ############################
+
+# convert back to eigensoft format
+convertf -p <(printf "genotypename: CASES_and_CONTROLS_1kg_merge.bed
+snpname: CASES_and_CONTROLS_1kg_merge.bim 
+indivname: CASES_and_CONTROLS_1kg_merge.fam 
+outputformat: EIGENSTRAT 
+genotypeoutname: CASES_and_CONTROLS_1kg_merge.eigenstratgeno 
+snpoutname: CASES_and_CONTROLS_1kg_merge.snp 
+indivoutname: CASES_and_CONTROLS_1kg_merge.ind")
+
+# run smartPCA
+/slade/local/pituitary/analysis/Population_stratification/EIG-6.1.4/bin/smartpca.perl \
+-i CASES_and_CONTROLS_1kg_merge.eigenstratgeno \
+-a CASES_and_CONTROLS_1kg_merge.snp \
+-b CASES_and_CONTROLS_1kg_merge.ind \
+-o CASES_and_CONTROLS_1kg_merge.pca \
+-p CASES_and_CONTROLS_1kg_merge.plot \
+-e CASES_and_CONTROLS_1kg_merge.eval \
+-l CASES_and_CONTROLS_1kg_merge.log \
+-w 1kg_ref/1KG_poplist.txt \
+-m 0 \
+-t 50 \
+-k 50 \
+-s 6
+
+# rename phenotype
+awk 'NR > 1 {print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $52"CHANGE"}' CASES_and_CONTROLS_1kg_merge.pca.evec > CASES_and_CONTROLS_1kg_merge.pca.evec_RENAMED
+sed -i -e 's/CaseCHANGE/CASE/g' -e 's/ControlCHANGE/CONTROL/g' -e 's/3CHANGE/EUR/g' -e 's/4CHANGE/EAS/g' -e 's/5CHANGE/AMR/g' -e 's/6CHANGE/AFR/g' -e 's/7CHANGE/SAS/g'  CASES_and_CONTROLS_1kg_merge.pca.evec_RENAMED
+
+# create plot
+Rscript PC_Plot_1KG.R
+
+########################## Step 6: Random Forest Model ############################
+
+# use random forest to estimate ancestry for cases using 1kg as the training set
+python ancestry_estimation.py
+
+# label any samples with a certainty less than 70% as UNCERTAIN
+awk -F, '{
+    if ($13 < 0.7) {
+        $14 = "UNCERTAIN"
+    }
+    print $0
+}' OFS=, cases_and_controls_estimated_ancestry.csv > cases_and_controls_estimated_ancestry_certain.csv
+
+
+################## Step 8. Identify Outliers for Europeans only #####################
+
+# extract europeans only
+sed -i 's/\r//' cases_and_controls_estimated_ancestry_certain.csv
+awk -F',' '$14 == "EUR" { print $1 }' cases_and_controls_estimated_ancestry_certain.csv > european_ids.txt
+sed -i 's/:/ /g' european_ids.txt
+
+plink --bfile CASES_and_CONTROLS_relatedrem --keep european_ids.txt --make-bed --out CASES_and_CONTROLS_european
+
+convertf -p <(printf "genotypename: CASES_and_CONTROLS_european.bed
+snpname: CASES_and_CONTROLS_european.bim 
+indivname: CASES_and_CONTROLS_european.fam 
+outputformat: EIGENSTRAT 
+genotypeoutname: CASES_and_CONTROLS_european.eigenstratgeno 
+snpoutname: CASES_and_CONTROLS_european.snp 
+indivoutname: CASES_and_CONTROLS_european.ind")
+
+/slade/projects/EXTEND/pituitary/analysis/Population_stratification/EIG-6.1.4/bin/smartpca.perl \
+-i CASES_and_CONTROLS_european.eigenstratgeno \
+-a CASES_and_CONTROLS_european.snp \
+-b CASES_and_CONTROLS_european.ind \
+-o CASES_and_CONTROLS_european_outliers.pca \
+-p CASES_and_CONTROLS_european_outliers.plot \
+-e CASES_and_CONTROLS_european_outliers.eval \
+-l CASES_and_CONTROLS_european_outliers.log \
+-m 5 \
+-t 10 \
+-k 10 \
+-s 6
+
+# extract outliers in PLINK (if we decide to remove them)
+awk '/REMOVED/ {print $3}' CASES_and_CONTROLS_european_outliers.log | sed 's/:/ /g' > CASES_and_CONTROLS_european_outliers.outliers
+
+# create plot
+Rscript plot_europeans_pca.R
+
+################ Step 9. Remove Outliers and Calculate Principal Components #############
+
+# remove outliers
+plink --bfile CASES_and_CONTROLS_european --remove CASES_and_CONTROLS_european_outliers.outliers --make-bed --out CASES_and_CONTROLS_european_outliersrem
+
+# convert files to eigensoft format
+convertf -p <(printf "genotypename: CASES_and_CONTROLS_european_outliersrem.bed
+snpname: CASES_and_CONTROLS_european_outliersrem.bim 
+indivname: CASES_and_CONTROLS_european_outliersrem.fam 
+outputformat: EIGENSTRAT 
+genotypeoutname: CASES_and_CONTROLS_european_outliersrem.eigenstratgeno 
+snpoutname: CASES_and_CONTROLS_european_outliersrem.snp 
+indivoutname: CASES_and_CONTROLS_european_outliersrem.ind")
+
+# Run smartPCA  
+/slade/projects/EXTEND/pituitary/analysis/Population_stratification/EIG-6.1.4/bin/smartpca.perl \
+-i CASES_and_CONTROLS_european_outliersrem.eigenstratgeno \
+-a CASES_and_CONTROLS_european_outliersrem.snp \
+-b CASES_and_CONTROLS_european_outliersrem.ind \
+-o CASES_and_CONTROLS_european_outliersrem.pca \
+-p CASES_and_CONTROLS_european_outliersrem.plot \
+-e CASES_and_CONTROLS_european_outliersrem.eval \
+-l CASES_and_CONTROLS_european_outliersrem.log \
+-m 0 \
+-t 100 \
+-k 100 \
+-s 6
+
+Rscript PCA_COVARIATES_EUR.R
+
+############### Step 10. Project Principal Components onto Related Individuals ##############
+
+# extracy related individuals
+plink --bfile related_projections --keep european_ids.txt --make-bed --out related_projections_european
+
+# Convert related_projections files to EIGENSTRAT format
+convertf -p <(printf "genotypename: related_projections_european.bed
+snpname: related_projections_european.bim 
+indivname: related_projections_european.fam 
+outputformat: EIGENSTRAT 
+genotypeoutname: related_projections_european.eigenstratgeno 
+snpoutname: related_projections_european.snp 
+indivoutname: related_projections_european.ind")
+
+# Run smartPCA to project new data
+/slade/projects/EXTEND/pituitary/analysis/Population_stratification/EIG-6.1.4/bin/smartpca.perl \
+-i related_projections_european.eigenstratgeno \
+-a related_projections_european.snp \
+-b related_projections_european.ind \
+-o related_projections_european_projection.pca \
+-p related_projections_european_projection.plot \
+-e CASES_and_CONTROLS_european_outliersrem.eval \
+-l related_projections_european_projection.log \
+-m 0 \
+-t 100 \
+-k 100 \
+-s 6 \
+-evecin CASES_and_CONTROLS_european_outliersrem.evec
+
+# merge files
+{ sed '1d' CASES_and_CONTROLS_european_outliersrem.pca.evec; sed '1d' related_projections_european_projection.pca.evec; } > combined_output_european.evec
+
+# make the files readable for R
+sed -i -e 's/:/ /g' -e 's/^[[:space:]]\+//; s/[[:space:]]\+/ /g' combined_output_european.evec
+
+# add header 
+(echo "FID IID $(for i in {1..100}; do echo -n "PC$i "; done)Pheno"; cat combined_output_european.evec) > temp_output.evec && mv temp_output.evec combined_output_european.evec
